@@ -277,7 +277,7 @@ def gradcheck(
             identical inputs through the differentiation, the results must either match
             exactly (default, 0.0) or be within this tolerance.
         check_undefined_grad (bool, options): if True, check if undefined output grads
-            are supported and treated as zeros
+            are supported and treated as zeros, for ``Tensor`` outputs.
 
     Returns:
         True if all differences satisfy allclose condition
@@ -297,7 +297,7 @@ def gradcheck(
         if is_tensor_like(inp) and inp.requires_grad:
             if not (inp.dtype == torch.float64 or inp.dtype == torch.complex128):
                 warnings.warn(
-                    'The {}th input requires gradient and '
+                    f'Input #{idx} requires gradient and '
                     'is not a double precision floating point or complex. '
                     'This check will likely fail if all the inputs are '
                     'not of double precision floating point or complex. ')
@@ -423,7 +423,11 @@ def gradcheck(
                         return fail_test('grad is sparse tensor, but has incorrect dense_dim')
                 gi = gi.to_dense()
                 di = di.to_dense()
-            if not gi.eq(0).all():
+
+            if check_sparse_nnz:
+                if not torch.allclose(gi, torch.zeros_like(gi)):
+                    return fail_test('backward not multiplied by grad_output')
+            elif not gi.eq(0).all():
                 return fail_test('backward not multiplied by grad_output')
             if gi.dtype != di.dtype or gi.device != di.device or gi.is_sparse != di.is_sparse:
                 return fail_test("grad is incorrect type")
@@ -462,7 +466,11 @@ def gradcheck(
                 return True
 
             # All backward functions must work properly if all output grads are undefined
-            outputs_to_check = [[torch._C._functions.UndefinedGrad()(o) for o in _differentiable_outputs(func(*tupled_inputs))]]
+            outputs_to_check = [[
+                torch._C._functions.UndefinedGrad()(o) for o in _differentiable_outputs(func(*tupled_inputs))
+                # This check filters out Tensor-likes that aren't instances of Tensor.
+                if isinstance(o, torch.Tensor)
+            ]]
 
             # If there are multiple output grads, we should be able to undef one at a time without error
             if len(outputs_to_check[0]) > 1:

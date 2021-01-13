@@ -1,4 +1,7 @@
 #include <torch/csrc/jit/runtime/static/init.h>
+
+#include <torch/csrc/jit/passes/freeze_module.h>
+#include <torch/csrc/jit/runtime/static/fusion.h>
 #include <torch/csrc/jit/runtime/static/impl.h>
 
 namespace torch {
@@ -26,7 +29,7 @@ void initStaticRuntimeBindings(PyObject* module) {
       .def(
           "run",
           py::overload_cast<const std::vector<at::Tensor>&>(
-              &StaticRuntime::run, py::const_))
+              &StaticRuntime::run))
       .def(
           "run",
           [](StaticRuntime& self,
@@ -65,11 +68,26 @@ void initStaticRuntimeBindings(PyObject* module) {
           });
   m.def(
        "_jit_to_static_runtime",
-       [](const std::shared_ptr<torch::jit::Graph>& g) {
+       [](std::shared_ptr<torch::jit::Graph> g) {
          return StaticRuntime(PrepareForStaticRuntime(g));
        })
-      .def("_jit_to_static_runtime", [](const torch::jit::Module& m) {
-        return StaticRuntime(m);
+      .def(
+          "_jit_to_static_runtime",
+          [](const torch::jit::Module& m) {
+            return StaticRuntime(PrepareForStaticRuntime(m));
+          })
+      .def(
+          "_fuse_to_static_runtime",
+          [](torch::jit::Module& module) {
+            module.eval();
+            module = freeze_module(module);
+
+            Method method = module.get_method("forward");
+            auto graph = method.graph();
+            fuseStaticSubgraphs(graph);
+          })
+      .def("_fuse_to_static_runtime", [](std::shared_ptr<torch::jit::Graph> g) {
+        fuseStaticSubgraphs(g);
       });
 }
 

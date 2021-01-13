@@ -400,6 +400,8 @@ Collective functions
 
 .. autofunction:: scatter
 
+.. autofunction:: scatter_object_list
+
 .. autofunction:: reduce_scatter
 
 .. autofunction:: all_to_all
